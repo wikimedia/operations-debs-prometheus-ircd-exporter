@@ -1,0 +1,12 @@
+Source: prometheus-ircd-exporter
+Section: net
+Priority: extra
+Maintainer: Moritz Muehlenhoff <moritz@wikimedia.org>
+Build-Depends: debhelper (>= 9), dh-systemd (>= 1.5)
+Standards-Version: 3.9.8
+
+Package: prometheus-ircd-exporter
+Architecture: all
+Depends: python-prometheus-client, ${misc:Depends}
+Description: Prometheus exporter for irc.wikimedia.org
+ Prometheus exporter for irc.wikimedia.org server metrics.

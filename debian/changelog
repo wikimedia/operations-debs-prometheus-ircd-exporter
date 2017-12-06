@@ -1,0 +1,5 @@
+prometheus-ircd-exporter (0.1) jessie-wikimedia; urgency=medium
+
+  * Initial release
+
+ -- Moritz Muehlenhoff <moritz@wikimedia.org>  Wed, 06 Dec 2017 16:24:50 +0000

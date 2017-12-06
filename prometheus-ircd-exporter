@@ -1,0 +1,125 @@
+#!/usr/bin/python
+# Copyright 2014 Chase Pettet
+#           2017 Moritz Muehlenhoff
+#           2017 Filippo Giunchedi
+#                Wikimedia Foundation
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import argparse
+import logging
+import sys
+import time
+import urllib2
+import json
+import socket
+import re
+
+from prometheus_client import start_http_server, Summary
+from prometheus_client.core import (GaugeMetricFamily, REGISTRY)
+
+log = logging.getLogger(__name__)
+
+
+class PrometheusIrcdCollector(object):
+    scrape_duration = Summary(
+            'ircd_scrape_duration_seconds', 'ircd exporter scrape duration')
+
+    user = 'ircd_stats_bot-prometheus'
+
+    def __init__(self, server, port):
+        self.server = server
+        self.port = port
+
+    def recv_until(self, the_socket, end):
+        total_data = ''
+        while True:
+            data = the_socket.recv(8192)
+            total_data += (data)
+            if end in total_data:
+                break
+        return total_data.rstrip('\0').strip()
+
+    @scrape_duration.time()
+    def collect(self):
+
+        irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            irc.connect((self.server, self.port))
+            irc.send("USER %s %s %s :%s\n" % (self.user, self.user, self.user, self.user))
+            irc.send("NICK %s\n" % self.user)
+            termout = self.recv_until(irc, 'End of /MOTD command')
+            users = re.search("There\sare\s(\d+)\susers", termout)
+            chans = re.search("(\d+)\s:channels\sformed", termout)
+
+            if users:
+                users_metric = GaugeMetricFamily('ircd_users', 'Numbers of connected users')
+                users_metric.add_metric([], float(users.groups()[0].strip()))
+                yield users_metric
+
+            if chans:
+                chans_metric = GaugeMetricFamily('ircd_channels', 'Numbers of IRC channels')
+                chans_metric.add_metric([], float(chans.groups()[0].strip()))
+                yield chans_metric
+
+            up = GaugeMetricFamily('ircd_up', 'ircd is running')
+            up.add_metric([], 1)
+            yield up
+
+        except socket.error:
+            log.error('Failed to connect to IRC server')
+            up = GaugeMetricFamily('ircd_up', 'ircd is running')
+            up.add_metric([], 0)
+            yield up
+
+        finally:
+            try:
+                irc.send("QUIT \n")
+                irc.close()
+            except socket.error:
+                log.error('Failed to close connection to IRC server')
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-l', '--listen', metavar='ADDRESS',
+                        help='Listen on this address', default=':9197')
+    parser.add_argument('-d', '--debug', action='store_true',
+                        help='Enable debug logging')
+    parser.add_argument('-p', '--port', type=int,
+                        help='The port of the IRC server to collect metrics from',
+                        default=6667)
+    parser.add_argument('-s', '--server', help='The IRC server to collect metrics from',
+                        default='localhost')
+    args = parser.parse_args()
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    address, port = args.listen.split(':', 1)
+
+    log.info('Starting ircd_exporter on %s:%s', address, port)
+
+    REGISTRY.register(PrometheusIrcdCollector(args.server, args.port))
+    start_http_server(int(port), addr=address)
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

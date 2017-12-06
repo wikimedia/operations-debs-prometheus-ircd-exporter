@@ -1,0 +1,11 @@
+[Unit]
+Description=Prometheus IRCD Exporter
+
+[Service]
+Restart=always
+User=prometheus
+ExecStart=/usr/bin/prometheus-ircd-exporter $ARGS
+EnvironmentFile=-/etc/default/prometheus-ircd-exporter
+
+[Install]
+WantedBy=multi-user.target
